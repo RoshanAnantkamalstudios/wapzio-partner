@@ -5,6 +5,7 @@ import { useRouter } from "next/navigation";
 import { Eye, EyeOff, Loader2, Lock, Mail } from "lucide-react";
 import { toast } from "sonner";
 import { sessionStore } from "@/src/lib/session";
+import { getRecaptchaToken } from "@/src/lib/recaptcha";
 
 /**
  * Partner sign-in.
@@ -28,10 +29,14 @@ export default function LoginPage() {
     setLoading(true);
 
     try {
+      // The backend runs the same human check for every surface. Without a
+      // token it answers RECAPTCHA_FAILED wherever the secret is configured.
+      const recaptcha_token = await getRecaptchaToken("login");
+
       const res = await fetch("/api/auth/login", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ identifier: email.trim(), password }),
+        body: JSON.stringify({ identifier: email.trim(), password, recaptcha_token }),
       });
       const payload = await res.json();
 
