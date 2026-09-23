@@ -3,9 +3,10 @@
   "version": "0.1.0",
   "private": true,
   "scripts": {
-    "dev": "next dev -p 3002",
+    "dev": "next dev -p 3003",
     "build": "next build",
-    "start": "next start -p 3002",
+    "//start": "No -p here on purpose: production frontend already owns 3002 on the shared box, and pm2 supplies PORT from the server .env. Hardcoding a port here is how two apps end up fighting over one.",
+    "start": "next start",
     "lint": "eslint"
   },
   "dependencies": {

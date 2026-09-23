@@ -1,0 +1,110 @@
+name: Deploy partner panel to test server
+
+on:
+  push:
+    branches: [dev]
+  workflow_dispatch:
+
+# Mirrors the admin panel's workflow deliberately: same build-on-server, same
+# staged swap, same rollback. Four near-identical pipelines are easier to reason
+# about at 2am than four clever ones.
+#
+# One-time server setup before this can succeed:
+#   - aaPanel site partner.wapzio.com + Let's Encrypt + reverse proxy to
+#     127.0.0.1:4504, proxy cache OFF
+#   - /www/wwwroot/partner.wapzio.com/.env with PORT=4504 and the NEXT_PUBLIC_*
+#     values below
+#   - first start: cd /www/wwwroot/partner.wapzio.com && npm ci && npm run build
+#     && PORT=4504 pm2 start npm --name wapzio_partner -- start && pm2 save
+jobs:
+  build-and-deploy:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+
+      - name: Install dependencies
+        run: npm ci
+
+      # Gate only — the deployable build is produced on the server, so a partly
+      # transferred .next can never reach the live site. This stops broken code
+      # from being deployed at all.
+      - name: Typecheck
+        run: npx tsc --noEmit -p tsconfig.json
+
+      - name: Sync source to server
+        uses: burnett01/rsync-deployments@7.0.2
+        with:
+          # Every .gitignore entry must also appear as an --exclude here. A
+          # gitignored path is never in the runner's checkout, so --delete would
+          # otherwise remove it from the server on every deploy.
+          switches: -avzr --delete --exclude=node_modules --exclude=.next --exclude=.next-build --exclude=.next-old --exclude=out --exclude=*.tsbuildinfo --exclude=next-env.d.ts --exclude=.env --exclude=.env.local --exclude=.git --exclude=.user.ini --exclude=.well-known --exclude=.htaccess
+          path: ./
+          remote_path: /www/wwwroot/partner.wapzio.com/
+          remote_host: ${{ secrets.SSH_HOST }}
+          remote_port: ${{ secrets.SSH_PORT }}
+          remote_user: ${{ secrets.SSH_USER }}
+          remote_key: ${{ secrets.SSH_PRIVATE_KEY }}
+
+      - name: Build on server and swap into place
+        uses: appleboy/ssh-action@v1.2.0
+        with:
+          host: ${{ secrets.SSH_HOST }}
+          port: ${{ secrets.SSH_PORT }}
+          username: ${{ secrets.SSH_USER }}
+          key: ${{ secrets.SSH_PRIVATE_KEY }}
+          script: |
+            set -e
+            source /etc/profile
+            cd /www/wwwroot/partner.wapzio.com
+
+            npm ci
+
+            # Build into a staging dir. NEXT_PUBLIC_* come from the server's
+            # .env, so the running app and the build always agree on which
+            # backend they talk to.
+            rm -rf .next-build
+            NEXT_DIST_DIR=.next-build NEXT_PUBLIC_DEPLOYMENT_ID=${{ github.sha }} npm run build
+
+            # Sanity check before anything live is touched
+            test -f .next-build/BUILD_ID
+            test -d .next-build/static/chunks
+
+            # Swap: from here the site is either fully on the old build or fully
+            # on the new one.
+            rm -rf .next-old
+            if [ -d .next ]; then mv .next .next-old; fi
+            mv .next-build .next
+
+            # Plain restart, no --update-env: pm2's remembered env is where PORT
+            # lives, and losing it drops the app onto Next's default 3000 while
+            # nginx keeps proxying 4504.
+            pm2 restart wapzio_partner || echo "First deploy: start once with pm2 (PORT=4504 pm2 start npm --name wapzio_partner -- start)"
+            sleep 4
+
+            # nginx proxy_cache keys whole HTML pages by URL. A page cached from
+            # the previous build references chunks this build no longer emits,
+            # so the browser 404s on them and the panel hangs on a spinner.
+            if [ -d /www/server/nginx/proxy_cache_dir ]; then
+              grep -rla 'KEY: http://127.0.0.1:4504' /www/server/nginx/proxy_cache_dir 2>/dev/null | xargs -r rm -f
+              echo "nginx cache purged for 127.0.0.1:4504"
+            fi
+
+            # Roll back if the new build will not serve. /login is the only page
+            # that renders without a session, so it is the honest health check.
+            CODE=$(curl -s -o /dev/null -w '%{http_code}' http://127.0.0.1:4504/login || echo 000)
+            if [ "$CODE" != "200" ]; then
+              echo "New build returned $CODE — rolling back"
+              rm -rf .next
+              mv .next-old .next
+              pm2 restart wapzio_partner
+              grep -rla 'KEY: http://127.0.0.1:4504' /www/server/nginx/proxy_cache_dir 2>/dev/null | xargs -r rm -f
+              exit 1
+            fi
+
+            echo "Deploy OK (HTTP $CODE, build $(cat .next/BUILD_ID))"
+            rm -rf .next-old
