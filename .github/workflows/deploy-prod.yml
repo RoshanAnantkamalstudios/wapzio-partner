@@ -1,23 +1,23 @@
-name: Deploy partner panel to test server
+name: Deploy partner panel to production
 
 on:
   push:
-    branches: [dev]
+    branches: [main]
   workflow_dispatch:
 
 # Mirrors the admin panel's workflow deliberately: same build-on-server, same
 # staged swap, same rollback. Four near-identical pipelines are easier to reason
 # about at 2am than four clever ones.
 #
-# Config comes from the `test` environment's Variables, not from a file anyone
+# Config comes from the `production` environment's Variables, not from a file anyone
 # edits on the box — see the .env written below. The port is whatever
 # PARTNER_PORT says, so it appears exactly once.
 #
 # One-time server setup before this can succeed:
-#   - aaPanel site partner.wapzio.com + Let's Encrypt, reverse proxy to
+#   - aaPanel site partners.wapzio.com + Let's Encrypt, reverse proxy to
 #     127.0.0.1:<PARTNER_PORT>, proxy cache OFF
 #   - repo Secrets: SSH_HOST, SSH_PORT, SSH_USER, SSH_PRIVATE_KEY
-#   - `test` environment Variables: NEXT_PUBLIC_API_URL, NEXT_PUBLIC_FRONT_URL,
+#   - `production` environment Variables: NEXT_PUBLIC_API_URL, NEXT_PUBLIC_FRONT_URL,
 #     NEXT_PUBLIC_RECAPTCHA_SITE_KEY, PARTNER_PORT
 # The first run creates the .env, builds, and starts pm2 itself.
 jobs:
@@ -27,7 +27,7 @@ jobs:
     # (NEXT_PUBLIC_API_URL and friends) can hold test values here and
     # production values in the `production` environment, instead of one
     # repository-wide value that can only ever point at one backend.
-    environment: test
+    environment: production
     steps:
       - uses: actions/checkout@v4
 
@@ -67,7 +67,7 @@ jobs:
           # otherwise remove it from the server on every deploy.
           switches: -avzr --delete --exclude=node_modules --exclude=.next --exclude=.next-build --exclude=.next-old --exclude=out --exclude=*.tsbuildinfo --exclude=next-env.d.ts --exclude=.env --exclude=.env.local --exclude=.git --exclude=.user.ini --exclude=.well-known --exclude=.htaccess
           path: ./
-          remote_path: /www/wwwroot/partner.wapzio.com/
+          remote_path: /www/wwwroot/partners.wapzio.com/
           remote_host: ${{ secrets.SSH_HOST }}
           remote_port: ${{ secrets.SSH_PORT }}
           remote_user: ${{ secrets.SSH_USER }}
@@ -83,14 +83,14 @@ jobs:
           script: |
             set -e
             source /etc/profile
-            cd /www/wwwroot/partner.wapzio.com
+            cd /www/wwwroot/partners.wapzio.com
 
             # Config lives in GitHub repo Variables, not hand-edited on the box.
             # Written before the build because NEXT_PUBLIC_* are baked in at build
             # time, and read again at start-up for PORT — one file, so the running
             # app and the build can never disagree about which backend they use.
             cat > .env <<ENVEOF
-            PORT=${{ vars.PARTNER_PORT || '4504' }}
+            PORT=${{ vars.PARTNER_PORT }}
             NEXT_PUBLIC_API_URL=${{ vars.NEXT_PUBLIC_API_URL }}
             NEXT_PUBLIC_FRONT_URL=${{ vars.NEXT_PUBLIC_FRONT_URL }}
             NEXT_PUBLIC_RECAPTCHA_SITE_KEY=${{ vars.NEXT_PUBLIC_RECAPTCHA_SITE_KEY }}
@@ -101,7 +101,7 @@ jobs:
             # purge all use the one port the environment declared — a port
             # repeated in four places is a port that eventually disagrees.
             set -a; . ./.env; set +a
-            PORT="${PORT:-4504}"
+            PORT="${PORT:?PARTNER_PORT must be set in the production environment}"
             echo "Deploying on port $PORT"
 
             npm ci
@@ -131,11 +131,11 @@ jobs:
             #
             # First deploy has no pm2 process yet, so start one, taking PORT from
             # the server .env rather than hardcoding it in two places.
-            if pm2 describe wapzio_partner > /dev/null 2>&1; then
-              pm2 restart wapzio_partner
+            if pm2 describe wapzio-partners > /dev/null 2>&1; then
+              pm2 restart wapzio-partners
             else
               echo "No pm2 process yet — starting one"
-              PORT="$PORT" pm2 start npm --name wapzio_partner -- start
+              PORT="$PORT" pm2 start npm --name wapzio-partners -- start
               pm2 save
             fi
             sleep 4
@@ -157,12 +157,12 @@ jobs:
                 echo "Rolling back to the previous build"
                 rm -rf .next
                 mv .next-old .next
-                pm2 restart wapzio_partner
+                pm2 restart wapzio-partners
                 grep -rla "KEY: http://127.0.0.1:$PORT" /www/server/nginx/proxy_cache_dir 2>/dev/null | xargs -r rm -f
               else
                 # Nothing to roll back to. Usually the reverse proxy or the .env
                 # is not in place yet; the build itself is fine and stays.
-                echo "First deploy — nothing to roll back to. Check the .env, the pm2 log (pm2 logs wapzio_partner) and the nginx proxy to 127.0.0.1:$PORT."
+                echo "First deploy — nothing to roll back to. Check the .env, the pm2 log (pm2 logs wapzio-partners) and the nginx proxy to 127.0.0.1:$PORT."
               fi
               exit 1
             fi
