@@ -19,6 +19,11 @@ on:
 jobs:
   build-and-deploy:
     runs-on: ubuntu-latest
+    # Variables are read from THIS environment, so the same names
+    # (NEXT_PUBLIC_API_URL and friends) can hold test values here and
+    # production values in the `production` environment, instead of one
+    # repository-wide value that can only ever point at one backend.
+    environment: test
     steps:
       - uses: actions/checkout@v4
 
