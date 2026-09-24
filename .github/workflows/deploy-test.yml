@@ -75,15 +75,28 @@ jobs:
             test -d .next-build/static/chunks
 
             # Swap: from here the site is either fully on the old build or fully
-            # on the new one.
+            # on the new one. HAD_PREVIOUS records whether there is anything to
+            # roll back to — on a first deploy there is not, and a blind
+            # `mv .next-old .next` would fail the job after a good build.
+            HAD_PREVIOUS=no
             rm -rf .next-old
-            if [ -d .next ]; then mv .next .next-old; fi
+            if [ -d .next ]; then mv .next .next-old; HAD_PREVIOUS=yes; fi
             mv .next-build .next
 
             # Plain restart, no --update-env: pm2's remembered env is where PORT
             # lives, and losing it drops the app onto Next's default 3000 while
             # nginx keeps proxying 4504.
-            pm2 restart wapzio_partner || echo "First deploy: start once with pm2 (PORT=4504 pm2 start npm --name wapzio_partner -- start)"
+            #
+            # First deploy has no pm2 process yet, so start one, taking PORT from
+            # the server .env rather than hardcoding it in two places.
+            if pm2 describe wapzio_partner > /dev/null 2>&1; then
+              pm2 restart wapzio_partner
+            else
+              echo "No pm2 process yet — starting one"
+              set -a; . ./.env; set +a
+              PORT="${PORT:-4504}" pm2 start npm --name wapzio_partner -- start
+              pm2 save
+            fi
             sleep 4
 
             # nginx proxy_cache keys whole HTML pages by URL. A page cached from
@@ -98,11 +111,18 @@ jobs:
             # that renders without a session, so it is the honest health check.
             CODE=$(curl -s -o /dev/null -w '%{http_code}' http://127.0.0.1:4504/login || echo 000)
             if [ "$CODE" != "200" ]; then
-              echo "New build returned $CODE — rolling back"
-              rm -rf .next
-              mv .next-old .next
-              pm2 restart wapzio_partner
-              grep -rla 'KEY: http://127.0.0.1:4504' /www/server/nginx/proxy_cache_dir 2>/dev/null | xargs -r rm -f
+              echo "New build returned $CODE"
+              if [ "$HAD_PREVIOUS" = "yes" ]; then
+                echo "Rolling back to the previous build"
+                rm -rf .next
+                mv .next-old .next
+                pm2 restart wapzio_partner
+                grep -rla 'KEY: http://127.0.0.1:4504' /www/server/nginx/proxy_cache_dir 2>/dev/null | xargs -r rm -f
+              else
+                # Nothing to roll back to. Usually the reverse proxy or the .env
+                # is not in place yet; the build itself is fine and stays.
+                echo "First deploy — nothing to roll back to. Check the .env, the pm2 log (pm2 logs wapzio_partner) and the nginx proxy to 127.0.0.1:4504."
+              fi
               exit 1
             fi
 
