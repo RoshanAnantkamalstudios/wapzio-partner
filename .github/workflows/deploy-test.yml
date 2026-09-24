@@ -27,6 +27,20 @@ jobs:
           node-version: 22
           cache: npm
 
+      # Fail on the runner, where the message is readable, rather than three
+      # steps later on the server with an empty API URL baked into the build.
+      - name: Check required repo variables
+        run: |
+          missing=""
+          [ -z "${{ vars.NEXT_PUBLIC_API_URL }}" ] && missing="$missing NEXT_PUBLIC_API_URL"
+          [ -z "${{ vars.NEXT_PUBLIC_FRONT_URL }}" ] && missing="$missing NEXT_PUBLIC_FRONT_URL"
+          if [ -n "$missing" ]; then
+            echo "Missing repository Variables:$missing"
+            echo "Set them under Settings → Secrets and variables → Actions → Variables."
+            exit 1
+          fi
+          echo "Variables present."
+
       - name: Install dependencies
         run: npm ci
 
@@ -61,6 +75,18 @@ jobs:
             set -e
             source /etc/profile
             cd /www/wwwroot/partner.wapzio.com
+
+            # Config lives in GitHub repo Variables, not hand-edited on the box.
+            # Written before the build because NEXT_PUBLIC_* are baked in at build
+            # time, and read again at start-up for PORT — one file, so the running
+            # app and the build can never disagree about which backend they use.
+            cat > .env <<ENVEOF
+            PORT=${{ vars.PARTNER_PORT || '4504' }}
+            NEXT_PUBLIC_API_URL=${{ vars.NEXT_PUBLIC_API_URL }}
+            NEXT_PUBLIC_FRONT_URL=${{ vars.NEXT_PUBLIC_FRONT_URL }}
+            NEXT_PUBLIC_RECAPTCHA_SITE_KEY=${{ vars.NEXT_PUBLIC_RECAPTCHA_SITE_KEY }}
+            ENVEOF
+            chmod 600 .env
 
             npm ci
 
