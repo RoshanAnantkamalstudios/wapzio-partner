@@ -11,22 +11,30 @@
 :root {
   --bg: #f6f7f9;
   --surface: #ffffff;
+  --surface-2: #f8fafc;
   --border: #e5e7eb;
+  --border-strong: #d4d8de;
   --text: #0f172a;
   --muted: #64748b;
   --primary: #16a34a;
   --primary-dark: #15803d;
+  --ring: rgb(22 163 74 / 0.18);
   --danger: #dc2626;
   --warning: #d97706;
+  --shadow-card: 0 1px 2px rgb(15 23 42 / 0.04), 0 8px 24px -12px rgb(15 23 42 / 0.12);
 }
 
 @media (prefers-color-scheme: dark) {
   :root {
     --bg: #0b1120;
     --surface: #111827;
+    --surface-2: #0f1626;
     --border: #1f2937;
+    --border-strong: #2b3648;
     --text: #f1f5f9;
     --muted: #94a3b8;
+    --ring: rgb(22 163 74 / 0.28);
+    --shadow-card: 0 1px 2px rgb(0 0 0 / 0.3), 0 8px 24px -12px rgb(0 0 0 / 0.6);
   }
 }
 
@@ -41,36 +49,55 @@ body {
   font-family: ui-sans-serif, system-ui, -apple-system, "Segoe UI", Roboto, Arial, sans-serif;
 }
 
-.card {
-  background: var(--surface);
-  border: 1px solid var(--border);
-  border-radius: 0.75rem;
-}
+/*
+ * These live in `@layer components` on purpose. Unlayered rules win against
+ * Tailwind's utilities, which meant a `pl-9` or a `py-2.5` next to `.input`
+ * was silently dropped — that is how the login field ended up with its icon
+ * printed over the placeholder. Inside the layer, utilities override again.
+ */
+@layer components {
+  .card {
+    background: var(--surface);
+    border: 1px solid var(--border);
+    border-radius: 0.75rem;
+  }
 
-.btn-primary {
-  background: var(--primary);
-  color: #fff;
-  border-radius: 0.5rem;
-  font-weight: 600;
-  transition: background 0.15s ease;
-}
-.btn-primary:hover:not(:disabled) {
-  background: var(--primary-dark);
-}
-.btn-primary:disabled {
-  opacity: 0.6;
-  cursor: not-allowed;
-}
+  .btn-primary {
+    background: var(--primary);
+    color: #fff;
+    border-radius: 0.5rem;
+    font-weight: 600;
+    transition: background 0.15s ease, box-shadow 0.15s ease;
+  }
+  .btn-primary:hover:not(:disabled) {
+    background: var(--primary-dark);
+  }
+  .btn-primary:focus-visible {
+    outline: none;
+    box-shadow: 0 0 0 3px var(--ring);
+  }
+  .btn-primary:disabled {
+    opacity: 0.6;
+    cursor: not-allowed;
+  }
 
-.input {
-  background: var(--surface);
-  border: 1px solid var(--border);
-  border-radius: 0.5rem;
-  color: var(--text);
-  padding: 0.625rem 0.75rem;
-  width: 100%;
-  outline: none;
-}
-.input:focus {
-  border-color: var(--primary);
+  .input {
+    background: var(--surface);
+    border: 1px solid var(--border);
+    border-radius: 0.5rem;
+    color: var(--text);
+    padding: 0.625rem 0.75rem;
+    width: 100%;
+    font-size: 0.875rem;
+    line-height: 1.25rem;
+    outline: none;
+    transition: border-color 0.15s ease, box-shadow 0.15s ease;
+  }
+  .input::placeholder {
+    color: var(--muted);
+  }
+  .input:focus {
+    border-color: var(--primary);
+    box-shadow: 0 0 0 3px var(--ring);
+  }
 }
