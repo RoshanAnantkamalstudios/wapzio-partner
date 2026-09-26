@@ -4,6 +4,7 @@ import { useEffect, useState } from "react";
 import { AlertTriangle, Check, Copy, KeyRound, Link2, Loader2, RefreshCw } from "lucide-react";
 import { toast } from "sonner";
 import { apiFetch } from "@/src/lib/api";
+import ConfirmDialog from "@/src/components/ConfirmDialog";
 import { PartnerProfile } from "@/src/lib/session";
 
 /**
@@ -19,6 +20,7 @@ export default function OnboardingPage() {
   const [loading, setLoading] = useState(true);
   const [newKey, setNewKey] = useState<string | null>(null);
   const [rotating, setRotating] = useState<"key" | "link" | null>(null);
+  const [confirming, setConfirming] = useState<"link" | "key" | null>(null);
 
   const load = async () => {
     const res = await apiFetch<PartnerProfile>("/partner/me");
@@ -46,7 +48,7 @@ export default function OnboardingPage() {
   };
 
   const rotateLink = async () => {
-    if (!window.confirm("Generate a new onboarding link?\n\nEvery link you have already shared stops working.")) return;
+    setConfirming(null);
     setRotating("link");
     const res = await apiFetch<{ onboarding_token: string }>("/partner/credentials/onboarding-link", { method: "POST" });
     setRotating(null);
@@ -60,7 +62,7 @@ export default function OnboardingPage() {
   };
 
   const rotateKey = async () => {
-    if (!window.confirm("Generate a new API key?\n\nYour current key stops working immediately.")) return;
+    setConfirming(null);
     setRotating("key");
     const res = await apiFetch<{ api_key: string }>("/partner/credentials/api-key", { method: "POST" });
     setRotating(null);
@@ -106,7 +108,7 @@ export default function OnboardingPage() {
             <button onClick={() => copy(joinUrl, "Link")} className="card p-2" aria-label="Copy link">
               <Copy size={16} />
             </button>
-            <button onClick={rotateLink} disabled={rotating === "link"} className="card p-2" aria-label="Generate new link">
+            <button onClick={() => setConfirming("link")} disabled={rotating === "link"} className="card p-2" aria-label="Generate new link">
               {rotating === "link" ? <Loader2 size={16} className="animate-spin" /> : <RefreshCw size={16} />}
             </button>
           </div>
@@ -131,7 +133,7 @@ export default function OnboardingPage() {
           <code className="flex-1 rounded-lg border border-[var(--border)] px-3 py-2 text-sm">
             {profile?.api_key_prefix ? `${profile.api_key_prefix}••••••••••••••••` : "No key issued"}
           </code>
-          <button onClick={rotateKey} disabled={rotating === "key"} className="card p-2" aria-label="Generate new key">
+          <button onClick={() => setConfirming("key")} disabled={rotating === "key"} className="card p-2" aria-label="Generate new key">
             {rotating === "key" ? <Loader2 size={16} className="animate-spin" /> : <RefreshCw size={16} />}
           </button>
         </div>
@@ -178,6 +180,20 @@ curl "${apiUrl}/partner-api/v1/clients?page=1&limit=20" \\
           customer sees a clear message rather than a failure.
         </p>
       </section>
+      <ConfirmDialog
+        open={confirming !== null}
+        title={confirming === "key" ? "Generate a new API key?" : "Generate a new onboarding link?"}
+        body={
+          confirming === "key"
+            ? "Your current key stops working immediately. Anything calling the Wapzio API with it will start failing until you update it."
+            : "Every link you have already shared stops working. Anyone part-way through signing up on the old link will have to start again."
+        }
+        confirmLabel={confirming === "key" ? "Generate new key" : "Generate new link"}
+        tone="danger"
+        busy={rotating !== null}
+        onConfirm={() => (confirming === "key" ? rotateKey() : rotateLink())}
+        onCancel={() => setConfirming(null)}
+      />
     </div>
   );
 }

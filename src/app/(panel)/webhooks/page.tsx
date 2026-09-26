@@ -4,6 +4,7 @@ import { useCallback, useEffect, useState } from "react";
 import { AlertTriangle, Check, Copy, Eye, EyeOff, Loader2, RefreshCw, Save, Send, X } from "lucide-react";
 import { toast } from "sonner";
 import { apiFetch } from "@/src/lib/api";
+import ConfirmDialog from "@/src/components/ConfirmDialog";
 
 interface WebhookConfig {
   webhook_url: string | null;
@@ -56,6 +57,7 @@ export default function WebhooksPage() {
   const [saving, setSaving] = useState(false);
   const [testing, setTesting] = useState(false);
   const [showSecret, setShowSecret] = useState(false);
+  const [confirmRotate, setConfirmRotate] = useState(false);
   const [url, setUrl] = useState("");
   const [events, setEvents] = useState<string[]>([]);
 
@@ -174,10 +176,7 @@ export default function WebhooksPage() {
                 <Copy size={16} />
               </button>
               <button
-                onClick={() => {
-                  if (window.confirm("Generate a new signing secret?\n\nYour server must be updated or every delivery will fail verification."))
-                    save({ rotate_secret: true });
-                }}
+                onClick={() => setConfirmRotate(true)}
                 className="card px-3 shrink-0"
                 aria-label="Rotate secret"
               >
@@ -314,6 +313,19 @@ app.post("/wapzio/webhook", express.raw({ type: "application/json" }), (req, res
           </div>
         ) : null}
       </section>
+      <ConfirmDialog
+        open={confirmRotate}
+        title="Generate a new signing secret?"
+        body="Your server must be updated with the new secret, or every delivery we send will fail signature verification."
+        confirmLabel="Generate new secret"
+        tone="danger"
+        busy={saving}
+        onConfirm={async () => {
+          await save({ rotate_secret: true });
+          setConfirmRotate(false);
+        }}
+        onCancel={() => setConfirmRotate(false)}
+      />
     </div>
   );
 }

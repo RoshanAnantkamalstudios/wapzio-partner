@@ -4,6 +4,7 @@ import { useCallback, useEffect, useState } from "react";
 import { Ban, Check, Loader2, Lock, Plus, RotateCcw, Search, Trash2, X } from "lucide-react";
 import { toast } from "sonner";
 import { apiFetch } from "@/src/lib/api";
+import ConfirmDialog from "@/src/components/ConfirmDialog";
 
 interface Client {
   _id: string;
@@ -51,6 +52,7 @@ export default function ClientsPage() {
   const [page, setPage] = useState(1);
   const [showCreate, setShowCreate] = useState(false);
   const [busyId, setBusyId] = useState<string | null>(null);
+  const [pendingRemove, setPendingRemove] = useState<Client | null>(null);
 
   const load = useCallback(async () => {
     setLoading(true);
@@ -83,17 +85,14 @@ export default function ClientsPage() {
     }
   };
 
-  const removeClient = async (client: Client) => {
-    // A removed client frees its seat, so this is a commercial action as much as
-    // a destructive one — confirm with the seat consequence spelled out.
-    const ok = window.confirm(
-      `Remove ${client.name}?\n\nThe account is closed and its seat is freed. This cannot be undone from the panel.`
-    );
-    if (!ok) return;
+  const removeClient = async () => {
+    const client = pendingRemove;
+    if (!client) return;
 
     setBusyId(client._id);
     const res = await apiFetch(`/partner/clients/${client._id}`, { method: "DELETE" });
     setBusyId(null);
+    setPendingRemove(null);
 
     if (res.ok) {
       toast.success("Client removed");
@@ -203,7 +202,7 @@ export default function ClientsPage() {
                             )}
                           </button>
                           <button
-                            onClick={() => removeClient(client)}
+                            onClick={() => setPendingRemove(client)}
                             disabled={busyId === client._id}
                             title="Remove"
                             className="p-2 rounded-lg hover:bg-black/5 dark:hover:bg-white/5 disabled:opacity-50"
@@ -254,6 +253,21 @@ export default function ClientsPage() {
           }}
         />
       ) : null}
+
+      <ConfirmDialog
+        open={!!pendingRemove}
+        title={pendingRemove ? `Remove ${pendingRemove.name}?` : ""}
+        body={
+          <>
+            The account is closed and its seat is freed. This cannot be undone from the panel.
+          </>
+        }
+        confirmLabel="Remove client"
+        tone="danger"
+        busy={!!pendingRemove && busyId === pendingRemove._id}
+        onConfirm={removeClient}
+        onCancel={() => setPendingRemove(null)}
+      />
     </div>
   );
 }
