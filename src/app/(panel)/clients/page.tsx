@@ -1,7 +1,7 @@
 "use client";
 
 import { useCallback, useEffect, useState } from "react";
-import { Ban, Check, Loader2, Plus, RotateCcw, Search, Trash2, X } from "lucide-react";
+import { Ban, Check, Loader2, Lock, Plus, RotateCcw, Search, Trash2, X } from "lucide-react";
 import { toast } from "sonner";
 import { apiFetch } from "@/src/lib/api";
 
@@ -11,6 +11,10 @@ interface Client {
   email: string;
   phone: string;
   is_blocked: boolean;
+  // Blocked by Wapzio rather than by you: an enforcement action against this
+  // account on our platform, which only Wapzio support can lift.
+  blocked_by_wapzio: boolean;
+  block_reason: string | null;
   email_verified: boolean;
   business_profile_completed: boolean;
   onboarding_completed: boolean;
@@ -28,6 +32,9 @@ interface ClientsResponse {
 }
 
 const StatusPill = ({ client }: { client: Client }) => {
+  if (client.blocked_by_wapzio) {
+    return <span className="px-2 py-0.5 rounded-full text-[11px] font-medium bg-red-100 text-red-700 dark:bg-red-900/20 dark:text-red-300">Blocked by Wapzio</span>;
+  }
   if (client.is_blocked) {
     return <span className="px-2 py-0.5 rounded-full text-[11px] font-medium bg-red-100 text-red-700 dark:bg-red-900/20 dark:text-red-300">Blocked</span>;
   }
@@ -166,30 +173,45 @@ export default function ClientsPage() {
                       {new Date(client.created_at).toLocaleDateString()}
                     </td>
                     <td className="px-4 py-3">
-                      <div className="flex items-center justify-end gap-1">
-                        <button
-                          onClick={() => toggleBlock(client)}
-                          disabled={busyId === client._id}
-                          title={client.is_blocked ? "Unblock" : "Block"}
-                          className="p-2 rounded-lg hover:bg-black/5 dark:hover:bg-white/5 disabled:opacity-50"
-                        >
-                          {busyId === client._id ? (
-                            <Loader2 size={16} className="animate-spin" />
-                          ) : client.is_blocked ? (
-                            <Check size={16} className="text-[var(--primary)]" />
-                          ) : (
-                            <Ban size={16} className="text-[var(--warning)]" />
-                          )}
-                        </button>
-                        <button
-                          onClick={() => removeClient(client)}
-                          disabled={busyId === client._id}
-                          title="Remove"
-                          className="p-2 rounded-lg hover:bg-black/5 dark:hover:bg-white/5 disabled:opacity-50"
-                        >
-                          <Trash2 size={16} className="text-[var(--danger)]" />
-                        </button>
-                      </div>
+                      {/* An account Wapzio has blocked is out of the reseller's
+                          hands entirely — the API refuses both calls, so offering
+                          the buttons would only produce an error. */}
+                      {client.blocked_by_wapzio ? (
+                        <div className="flex items-center justify-end gap-1.5 text-[var(--muted)]">
+                          <Lock size={14} />
+                          <span
+                            className="text-xs"
+                            title={client.block_reason || "Contact Wapzio support"}
+                          >
+                            Wapzio support only
+                          </span>
+                        </div>
+                      ) : (
+                        <div className="flex items-center justify-end gap-1">
+                          <button
+                            onClick={() => toggleBlock(client)}
+                            disabled={busyId === client._id}
+                            title={client.is_blocked ? "Unblock" : "Block"}
+                            className="p-2 rounded-lg hover:bg-black/5 dark:hover:bg-white/5 disabled:opacity-50"
+                          >
+                            {busyId === client._id ? (
+                              <Loader2 size={16} className="animate-spin" />
+                            ) : client.is_blocked ? (
+                              <Check size={16} className="text-[var(--primary)]" />
+                            ) : (
+                              <Ban size={16} className="text-[var(--warning)]" />
+                            )}
+                          </button>
+                          <button
+                            onClick={() => removeClient(client)}
+                            disabled={busyId === client._id}
+                            title="Remove"
+                            className="p-2 rounded-lg hover:bg-black/5 dark:hover:bg-white/5 disabled:opacity-50"
+                          >
+                            <Trash2 size={16} className="text-[var(--danger)]" />
+                          </button>
+                        </div>
+                      )}
                     </td>
                   </tr>
                 ))}
