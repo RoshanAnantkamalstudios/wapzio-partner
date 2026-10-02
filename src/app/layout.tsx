@@ -12,7 +12,8 @@ export const metadata: Metadata = {
 export default function RootLayout({ children }: { children: React.ReactNode }) {
   return (
     <html lang="en">
-      <body>
+      {/* Browser extensions (ColorZilla etc.) inject attributes onto <body> before hydration. */}
+      <body suppressHydrationWarning>
         {children}
         <Toaster position="top-right" richColors />
       </body>
