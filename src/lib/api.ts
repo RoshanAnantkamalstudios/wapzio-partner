@@ -1,4 +1,5 @@
 import { sessionStore } from "./session";
+import { CONSENT_REQUIRED_EVENT } from "./consents";
 
 /**
  * Browser → this project's /api proxy → backend.
@@ -53,6 +54,12 @@ export async function apiFetch<T = unknown>(
   const code = (payload.code as string) || null;
   if (res.status === 401 || code === "PARTNER_BLOCKED" || code === "ACCOUNT_BLOCKED") {
     onUnauthorized();
+  }
+
+  // Not a logout: the account is fine, it just has agreements to accept. The
+  // panel shell listens for this and puts the agreements screen up.
+  if (code === "CONSENT_REQUIRED" && typeof window !== "undefined") {
+    window.dispatchEvent(new Event(CONSENT_REQUIRED_EVENT));
   }
 
   return {

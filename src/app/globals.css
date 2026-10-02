@@ -103,3 +103,35 @@ body {
     box-shadow: 0 0 0 3px var(--ring);
   }
 }
+
+/*
+ * Published legal text (agreements and notices) arrives as HTML from the
+ * ledger. Tailwind's preflight strips list and heading styling, so this puts
+ * back just enough to read it comfortably.
+ */
+.doc-body {
+  font-size: 0.875rem;
+  line-height: 1.6;
+  color: var(--text);
+}
+.doc-body h2 {
+  font-size: 0.95rem;
+  font-weight: 600;
+  margin: 1rem 0 0.35rem;
+}
+.doc-body p {
+  margin: 0.5rem 0;
+  color: var(--muted);
+}
+.doc-body ul {
+  list-style: disc;
+  padding-left: 1.25rem;
+  margin: 0.5rem 0;
+  color: var(--muted);
+}
+.doc-body li {
+  margin: 0.2rem 0;
+}
+.doc-body strong {
+  color: var(--text);
+}

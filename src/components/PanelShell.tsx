@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import Link from "next/link";
 import { usePathname, useRouter } from "next/navigation";
 import {
@@ -15,9 +15,13 @@ import {
   Webhook,
   ChevronDown,
   Bell,
+  ScrollText,
+  ShieldAlert,
 } from "lucide-react";
 import { apiFetch } from "@/src/lib/api";
 import { PartnerProfile, sessionStore } from "@/src/lib/session";
+import { CONSENT_REQUIRED_EVENT, ConsentStatus } from "@/src/lib/consents";
+import ConsentScreen from "@/src/components/ConsentScreen";
 
 const NAV = [
   { href: "/dashboard", label: "Dashboard", icon: LayoutDashboard },
@@ -44,11 +48,13 @@ const useOutsideClose = (open: boolean, close: () => void) => {
 const AccountMenu = ({
   name,
   placement,
+  pendingAgreements = 0,
   onNavigate,
   onSignOut,
 }: {
   name?: string;
   placement: "up" | "down";
+  pendingAgreements?: number;
   onNavigate?: () => void;
   onSignOut: () => void;
 }) => {
@@ -74,6 +80,23 @@ const AccountMenu = ({
           >
             <Settings size={16} />
             Settings
+          </Link>
+          <Link
+            href="/agreements"
+            role="menuitem"
+            onClick={() => {
+              setOpen(false);
+              onNavigate?.();
+            }}
+            className="flex items-center gap-2 px-3 py-2 rounded-lg text-sm hover:bg-black/5 dark:hover:bg-white/5"
+          >
+            <ScrollText size={16} />
+            Agreements
+            {pendingAgreements > 0 ? (
+              <span className="ml-auto text-[11px] font-semibold rounded-full bg-amber-100 text-amber-700 dark:bg-amber-900/30 dark:text-amber-300 px-2 py-0.5">
+                {pendingAgreements} to accept
+              </span>
+            ) : null}
           </Link>
           <button
             role="menuitem"
@@ -142,6 +165,19 @@ export const PanelShell = ({ children }: { children: React.ReactNode }) => {
   const [profile, setProfile] = useState<PartnerProfile | null>(null);
   const [loading, setLoading] = useState(true);
   const [menuOpen, setMenuOpen] = useState(false);
+  const [consents, setConsents] = useState<ConsentStatus | null>(null);
+  const [consentOpen, setConsentOpen] = useState(false);
+
+  const loadConsents = useCallback(async () => {
+    const res = await apiFetch<ConsentStatus>("/partner/consents");
+    if (res.ok && res.data) setConsents(res.data);
+  }, []);
+
+  // A call the backend refused for pending agreements: put the screen up now.
+  useEffect(() => {
+    window.addEventListener(CONSENT_REQUIRED_EVENT, loadConsents);
+    return () => window.removeEventListener(CONSENT_REQUIRED_EVENT, loadConsents);
+  }, [loadConsents]);
 
   useEffect(() => {
     let cancelled = false;
@@ -164,6 +200,8 @@ export const PanelShell = ({ children }: { children: React.ReactNode }) => {
 
       sessionStore.setProfile(res.data);
       setProfile(res.data);
+      await loadConsents();
+      if (cancelled) return;
       setLoading(false);
     };
 
@@ -171,7 +209,7 @@ export const PanelShell = ({ children }: { children: React.ReactNode }) => {
     return () => {
       cancelled = true;
     };
-  }, [router]);
+  }, [router, loadConsents]);
 
   const signOut = () => {
     sessionStore.clear();
@@ -184,6 +222,13 @@ export const PanelShell = ({ children }: { children: React.ReactNode }) => {
         <Loader2 className="animate-spin text-[var(--primary)]" size={28} />
       </div>
     );
+  }
+
+  const pendingCount = consents?.pending.length ?? 0;
+
+  // Enforcement on and something to accept: nothing else in the panel is reachable.
+  if (consents && consents.enforced && pendingCount > 0) {
+    return <ConsentScreen status={consents} mode="block" onAccepted={setConsents} onSignOut={signOut} />;
   }
 
   const seatLimit = profile?.seat_limit ?? 0;
@@ -249,7 +294,7 @@ export const PanelShell = ({ children }: { children: React.ReactNode }) => {
           </div>
 
           <div className="border-t border-[var(--border)] pt-2">
-            <AccountMenu name={profile?.name} placement="up" onNavigate={() => setMenuOpen(false)} onSignOut={signOut} />
+            <AccountMenu name={profile?.name} placement="up" pendingAgreements={pendingCount} onNavigate={() => setMenuOpen(false)} onSignOut={signOut} />
           </div>
         </div>
       </aside>
@@ -267,7 +312,7 @@ export const PanelShell = ({ children }: { children: React.ReactNode }) => {
         <header className="hidden lg:flex h-16 items-center justify-end gap-2 px-5 border-b border-[var(--border)] bg-[var(--surface)]">
           <BellMenu />
           <div className="w-60">
-            <AccountMenu name={profile?.name} placement="down" onSignOut={signOut} />
+            <AccountMenu name={profile?.name} placement="down" pendingAgreements={pendingCount} onSignOut={signOut} />
           </div>
         </header>
 
@@ -278,7 +323,35 @@ export const PanelShell = ({ children }: { children: React.ReactNode }) => {
           <span className="font-semibold">{profile?.name}</span>
         </header>
 
+        {/* Enforcement is still off: ask, but do not lock anyone out. */}
+        {pendingCount > 0 ? (
+          <div className="mx-4 sm:mx-5 mt-4 rounded-xl border border-amber-200 dark:border-amber-900/40 bg-amber-50 dark:bg-amber-900/15 px-4 py-3 flex items-center gap-3 flex-wrap">
+            <ShieldAlert size={18} className="text-amber-700 dark:text-amber-300 shrink-0" />
+            <p className="flex-1 min-w-0 text-sm text-amber-900 dark:text-amber-200">
+              {pendingCount} agreement{pendingCount === 1 ? "" : "s"} waiting for your acceptance.
+            </p>
+            <button
+              onClick={() => setConsentOpen(true)}
+              className="h-9 px-4 rounded-lg bg-[var(--primary)] text-white text-sm font-semibold hover:bg-[var(--primary-dark)]"
+            >
+              Review and accept
+            </button>
+          </div>
+        ) : null}
+
         <main className="px-4 py-4 sm:px-5 sm:py-5 lg:px-5 lg:py-6">{children}</main>
+
+        {consentOpen && consents && pendingCount > 0 ? (
+          <ConsentScreen
+            status={consents}
+            mode="modal"
+            onAccepted={(next) => {
+              setConsents(next);
+              setConsentOpen(false);
+            }}
+            onClose={() => setConsentOpen(false)}
+          />
+        ) : null}
       </div>
     </div>
   );
