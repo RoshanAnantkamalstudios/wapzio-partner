@@ -269,7 +269,7 @@ Base URL: \`${base}/partner-api/v1\`
 | Method | Path | What it does |
 | --- | --- | --- |
 | POST | /clients | Create a client account |
-| GET | /clients | List your clients (\`page\`, \`limit\`, \`search\`) |
+| GET | /clients | List your clients (\`page\`, \`limit\`, \`search\`). Email and phone come back masked (\`email_masked\`, \`phone_masked\`); \`search\` still accepts a full email or phone |
 | GET | /stats | Seats and client counts |
 | PATCH | /clients/:clientId/block | Block or unblock a client (\`{ "blocked": true }\`) |
 | DELETE | /clients/:clientId | Remove a client and free its seat |
