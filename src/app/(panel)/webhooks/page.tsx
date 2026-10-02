@@ -67,15 +67,20 @@ const BUBBLE: Record<Tone, string> = {
   amber: "bg-amber-100 text-[var(--warning)] dark:bg-amber-900/25",
 };
 
-const EVENT_META: Record<string, { icon: React.ElementType; tone: Tone; help: string }> = {
-  "client.created": { icon: UserPlus, tone: "green", help: "Triggered when a new client is created." },
-  "client.whatsapp_connected": { icon: MessageCircle, tone: "green", help: "Triggered when client connects WhatsApp." },
-  "client.blocked": { icon: Ban, tone: "red", help: "Triggered when a client is blocked." },
-  "client.unblocked": { icon: CheckCircle2, tone: "green", help: "Triggered when a client is unblocked." },
-  "client.removed": { icon: Trash2, tone: "red", help: "Triggered when a client is removed." },
-  "seats.low": { icon: AlertTriangle, tone: "amber", help: "Triggered when seats are low." },
-  "seats.exhausted": { icon: AlertCircle, tone: "red", help: "Triggered when last seat is used." },
+// `label` is the plain-language name shown to people. The technical code stays
+// visible beneath it, because it is the exact string a partner's server receives.
+const EVENT_META: Record<string, { icon: React.ElementType; tone: Tone; label: string; help: string }> = {
+  "client.created": { icon: UserPlus, tone: "green", label: "New client added", help: "Triggered when a new client is created." },
+  "client.whatsapp_connected": { icon: MessageCircle, tone: "green", label: "Client connected WhatsApp", help: "Triggered when client connects WhatsApp." },
+  "client.blocked": { icon: Ban, tone: "red", label: "Client blocked", help: "Triggered when a client is blocked." },
+  "client.unblocked": { icon: CheckCircle2, tone: "green", label: "Client unblocked", help: "Triggered when a client is unblocked." },
+  "client.removed": { icon: Trash2, tone: "red", label: "Client removed", help: "Triggered when a client is removed." },
+  "seats.low": { icon: AlertTriangle, tone: "amber", label: "Seats running low", help: "Triggered when seats are low." },
+  "seats.exhausted": { icon: AlertCircle, tone: "red", label: "No seats left", help: "Triggered when last seat is used." },
 };
+
+// Falls back to the code itself for an event added on the backend before this list.
+const eventLabel = (event: string) => EVENT_META[event]?.label || event;
 
 const formatWhen = (iso: string) =>
   new Date(iso).toLocaleString("en-US", {
@@ -434,7 +439,7 @@ export default function WebhooksPage() {
 
         <div className="mt-5 grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-3">
           {available.map((event) => {
-            const meta = EVENT_META[event] || { icon: Zap, tone: "green" as Tone, help: "" };
+            const meta = EVENT_META[event] || { icon: Zap, tone: "green" as Tone, label: event, help: "" };
             const Icon = meta.icon;
             const on = effective.includes(event);
             return (
@@ -455,8 +460,9 @@ export default function WebhooksPage() {
                   <Icon size={20} />
                 </div>
                 <div className="min-w-0 flex-1">
-                  <div className="text-sm font-semibold truncate">{event}</div>
+                  <div className="text-sm font-semibold truncate">{meta.label}</div>
                   <div className="text-sm text-[var(--muted)]">{meta.help}</div>
+                  <code className="mt-0.5 block text-xs text-[var(--muted)] truncate">{event}</code>
                 </div>
                 {/* The switch must not also open the details. */}
                 <div onClick={(e) => e.stopPropagation()} onKeyDown={(e) => e.stopPropagation()}>
@@ -716,12 +722,15 @@ const EventDetails = ({
   const real = lastDelivery?.payload;
 
   return (
-    <ModalShell title={event} onClose={onClose}>
+    <ModalShell title={eventLabel(event)} onClose={onClose}>
       <div className="flex items-center gap-3">
         <div className={`w-11 h-11 rounded-full flex items-center justify-center shrink-0 ${BUBBLE[meta?.tone || "green"]}`}>
           <Icon size={20} />
         </div>
-        <p className="flex-1 text-sm text-[var(--muted)]">{meta?.help}</p>
+        <div className="flex-1 min-w-0">
+          <p className="text-sm text-[var(--muted)]">{meta?.help}</p>
+          <code className="text-xs text-[var(--muted)]">{event}</code>
+        </div>
         <div className="flex items-center gap-2 text-sm font-medium">
           {on ? "On" : "Off"}
           <Toggle on={on} onChange={onToggle} label={`Receive ${event}`} />
