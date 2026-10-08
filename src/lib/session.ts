@@ -17,6 +17,8 @@ export interface PartnerProfile {
   seat_limit: number;
   seats_used?: number;
   seats_remaining?: number;
+  // Default term, in days, applied to clients you onboard. 0 = no end date.
+  client_term_days?: number;
   onboarding_token?: string | null;
   api_key_prefix?: string | null;
   webhook_url?: string | null;

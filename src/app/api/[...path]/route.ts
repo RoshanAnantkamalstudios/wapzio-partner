@@ -17,6 +17,12 @@ const ALLOWED_PREFIXES = [
   "auth/login", // sign in
   "auth/logout",
   "auth/profile",
+  // Opening a client's app, redeeming the ticket that drops a Wapzio admin into
+  // this panel, and the banner that says a borrowed session is in play.
+  "impersonation/client-portal",
+  "impersonation/redeem",
+  "impersonation/status",
+  "impersonation/stop",
 ];
 
 const isAllowed = (path: string) => ALLOWED_PREFIXES.some((prefix) => path === prefix || path.startsWith(prefix));

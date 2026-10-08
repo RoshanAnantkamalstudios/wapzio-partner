@@ -12,6 +12,7 @@ import {
   Copy,
   Loader2,
   Lock,
+  LogIn,
   MessageCircle,
   MoreVertical,
   Plus,
@@ -43,6 +44,18 @@ interface Client {
   whatsapp_status: string;
   plan_name: string | null;
   subscription_status: string;
+  /*
+   * When this client's term runs out.
+   *
+   * Null means there is no end date at all, which is the default: access lasts
+   * as long as your own partner account does. A date appears only where you
+   * chose to sell this client a term, and then the Renew action is what moves
+   * it — the client has no way to pay for more time themselves.
+   */
+  current_period_end: string | null;
+  days_remaining: number | null;
+  is_expired: boolean;
+  has_term: boolean;
   created_at: string;
 }
 
@@ -58,6 +71,8 @@ interface Stats {
   clients_blocked: number;
   clients_whatsapp_connected: number;
   clients_pending_setup: number;
+  clients_expired: number;
+  clients_expiring_soon: number;
 }
 
 const STATUS_OPTIONS = [
@@ -145,6 +160,42 @@ const Checkbox = ({
   />
 );
 
+/**
+ * When this client's term runs out, in the words that match what you can do
+ * about it.
+ *
+ * "No expiry" is not a gap in the data — it is the default, and it means this
+ * client keeps working for as long as your own partner account does. A date
+ * appears only where you sold them a term, and then it is yours to extend,
+ * because the client has no way to buy more time themselves.
+ */
+const ExpiryCell = ({ client }: { client: Client }) => {
+  if (!client.has_term) {
+    return <span className="text-[var(--muted)]">No expiry</span>;
+  }
+
+  const days = client.days_remaining ?? 0;
+
+  if (client.is_expired) {
+    return (
+      <span className="inline-flex flex-col">
+        <span className="font-semibold text-[var(--danger)]">Expired</span>
+        <span className="text-xs text-[var(--muted)]">{formatDate(client.current_period_end as string)}</span>
+      </span>
+    );
+  }
+
+  const soon = days <= 7;
+  return (
+    <span className="inline-flex flex-col">
+      <span className={soon ? "font-semibold text-[var(--warning)]" : ""}>
+        {days} day{days === 1 ? "" : "s"} left
+      </span>
+      <span className="text-xs text-[var(--muted)]">{formatDate(client.current_period_end as string)}</span>
+    </span>
+  );
+};
+
 export default function ClientsPage() {
   const [all, setAll] = useState<Client[]>([]);
   const [stats, setStats] = useState<Stats | null>(null);
@@ -164,6 +215,8 @@ export default function ClientsPage() {
   const [busyId, setBusyId] = useState<string | null>(null);
   const [bulkBusy, setBulkBusy] = useState(false);
   const [pendingRemove, setPendingRemove] = useState<Client | null>(null);
+  // The renew dialog: which client, and how many days to add.
+  const [renewFor, setRenewFor] = useState<Client | null>(null);
   const [rowMenu, setRowMenu] = useState<{ client: Client; top: number; right: number } | null>(null);
 
   // The dashboard's "Add client" button lands here with ?add=1 to open the dialog.
@@ -351,6 +404,58 @@ export default function ClientsPage() {
     }
   };
 
+  /*
+   * Extend a client's term.
+   *
+   * The half that makes an expiry date safe to set at all: the client cannot
+   * renew — they owe Wapzio nothing and have no billing screen — so the button
+   * has to be here, with you. Extending early adds to what is left rather than
+   * restarting from today, and a client who had already lapsed comes straight
+   * back as soon as the new date is in the future.
+   */
+  const renewClient = async (client: Client, days: number) => {
+    const res = await apiFetch<{ current_period_end: string }>(`/partner/clients/${client._id}/renew`, {
+      method: "POST",
+      body: { days },
+    });
+
+    if (res.ok) {
+      toast.success(res.message || `${client.name} extended`);
+      setRenewFor(null);
+      await load();
+      return;
+    }
+    toast.error(res.message || "Could not extend this client");
+  };
+
+  /*
+   * Open a client's own app, as them, without asking them for anything.
+   *
+   * This replaces ringing the client for a one-time code every time something
+   * needs checking — unworkable at fifty clients, let alone two hundred. The
+   * session lasts an hour, is written to the audit log against your name, and
+   * shows the client a banner for as long as it is open. A few things stay out
+   * of reach inside it: their password, their email address, their API keys,
+   * and accepting agreements on their behalf.
+   */
+  const openClientApp = async (client: Client) => {
+    setBusyId(client._id);
+    const res = await apiFetch<{ url: string }>("/impersonation/client-portal", {
+      method: "POST",
+      body: { clientId: client._id },
+    });
+
+    if (res.ok && res.data?.url) {
+      // Straight there: the ticket in the link is good for ninety seconds and
+      // one use, so there is nothing worth holding on to.
+      window.location.href = res.data.url;
+      return;
+    }
+
+    setBusyId(null);
+    toast.error(res.message || "Could not open that account");
+  };
+
   // Window of page buttons around the current page.
   const pageButtons = useMemo(() => {
     const out: number[] = [];
@@ -378,6 +483,10 @@ export default function ClientsPage() {
         <StatTile label="Connected" value={stats?.clients_whatsapp_connected ?? 0} icon={MessageCircle} tone="green" />
         <StatTile label="Setup pending" value={stats?.clients_pending_setup ?? 0} icon={Clock} tone="amber" />
         <StatTile label="Blocked" value={stats?.clients_blocked ?? 0} icon={Ban} tone="red" />
+        {/* The reseller's own words: "I should not have to remember that this
+            client joined thirty days ago". These two are that. */}
+        <StatTile label="Expiring in 7 days" value={stats?.clients_expiring_soon ?? 0} icon={CalendarDays} tone="amber" />
+        <StatTile label="Expired" value={stats?.clients_expired ?? 0} icon={Clock} tone="red" />
       </div>
 
       {/* Filters */}
@@ -502,6 +611,7 @@ export default function ClientsPage() {
                   <th className="px-3 py-4 font-semibold">Status</th>
                   <th className="px-3 py-4 font-semibold">WhatsApp</th>
                   <th className="px-3 py-4 font-semibold">Plan</th>
+                  <th className="px-3 py-4 font-semibold">Expires</th>
                   <th className="px-3 py-4 font-semibold">Joined</th>
                   <th className="px-5 py-4 font-semibold text-right">Actions</th>
                 </tr>
@@ -541,6 +651,9 @@ export default function ClientsPage() {
                         </span>
                       </td>
                       <td className="px-3 py-4 text-[var(--muted)]">{client.plan_name || "—"}</td>
+                      <td className="px-3 py-4">
+                        <ExpiryCell client={client} />
+                      </td>
                       <td className="px-3 py-4 text-[var(--muted)]">{formatDate(client.created_at)}</td>
                       <td className="px-5 py-4 text-right">
                         <button
@@ -649,6 +762,36 @@ export default function ClientsPage() {
               Copy email
             </button>
 
+            {/* No OTP, no password, no phone call. Audited, and the client is
+                shown a banner for as long as the session is open. */}
+            <button
+              role="menuitem"
+              disabled={rowMenu.client.is_blocked}
+              onClick={() => {
+                const c = rowMenu.client;
+                setRowMenu(null);
+                openClientApp(c);
+              }}
+              title={rowMenu.client.is_blocked ? "Unblock this client first" : "Sign in to this client's account as them"}
+              className="w-full flex items-center gap-2 px-3 py-2 rounded-lg text-sm hover:bg-black/5 dark:hover:bg-white/10 disabled:opacity-40 disabled:hover:bg-transparent"
+            >
+              <LogIn size={16} className="text-[var(--primary)]" />
+              Open their account
+            </button>
+
+            <button
+              role="menuitem"
+              onClick={() => {
+                const c = rowMenu.client;
+                setRowMenu(null);
+                setRenewFor(c);
+              }}
+              className="w-full flex items-center gap-2 px-3 py-2 rounded-lg text-sm hover:bg-black/5 dark:hover:bg-white/10"
+            >
+              <CalendarDays size={16} className="text-[var(--muted)]" />
+              {rowMenu.client.has_term ? "Extend term" : "Set a term"}
+            </button>
+
             {/* An account Wapzio has blocked is out of the reseller's hands
                 entirely: the API refuses both calls, so offering the buttons
                 would only produce an error. */}
@@ -720,12 +863,121 @@ export default function ClientsPage() {
         onConfirm={removeClient}
         onCancel={() => setPendingRemove(null)}
       />
+
+      {renewFor ? (
+        <RenewClientModal client={renewFor} onClose={() => setRenewFor(null)} onRenew={renewClient} />
+      ) : null}
     </div>
   );
 }
 
+/**
+ * Add days to a client's term.
+ *
+ * The presets are the terms resellers actually sell. The free field is there
+ * because somebody always sells a fortnight. Extending from the current end
+ * rather than from today is handled on the server, so paying early never costs
+ * the client the days they already have.
+ */
+const RENEW_PRESETS = [30, 90, 180, 365];
+
+const RenewClientModal = ({
+  client,
+  onClose,
+  onRenew,
+}: {
+  client: Client;
+  onClose: () => void;
+  onRenew: (client: Client, days: number) => Promise<void>;
+}) => {
+  const [days, setDays] = useState(30);
+  const [saving, setSaving] = useState(false);
+
+  const submit = async (event: React.FormEvent) => {
+    event.preventDefault();
+    if (days < 1) return;
+    setSaving(true);
+    await onRenew(client, days);
+    setSaving(false);
+  };
+
+  const newEnd = () => {
+    const from = client.current_period_end && new Date(client.current_period_end) > new Date()
+      ? new Date(client.current_period_end)
+      : new Date();
+    from.setDate(from.getDate() + days);
+    return formatDate(from.toISOString());
+  };
+
+  return (
+    <div className="fixed inset-0 z-50 flex items-center justify-center p-4">
+      <button aria-label="Close" className="absolute inset-0 bg-black/40" onClick={onClose} />
+      <form onSubmit={submit} className="relative card w-full max-w-[420px] p-6 shadow-[var(--shadow-card)]">
+        <div className="flex items-start justify-between gap-3">
+          <div>
+            <h2 className="text-[17px] font-semibold tracking-tight">
+              {client.has_term ? "Extend term" : "Set a term"}
+            </h2>
+            <p className="mt-1 text-[13px] text-[var(--muted)]">{client.name}</p>
+          </div>
+          <button type="button" onClick={onClose} aria-label="Close" className="text-[var(--muted)] hover:text-[var(--text)]">
+            <X size={18} />
+          </button>
+        </div>
+
+        <div className="mt-5 flex flex-wrap gap-2">
+          {RENEW_PRESETS.map((preset) => (
+            <button
+              key={preset}
+              type="button"
+              onClick={() => setDays(preset)}
+              className={`px-3 py-1.5 rounded-lg text-sm border ${
+                days === preset
+                  ? "border-[var(--primary)] bg-[var(--primary)]/10 text-[var(--primary)] font-medium"
+                  : "border-[var(--border)] hover:bg-black/5 dark:hover:bg-white/5"
+              }`}
+            >
+              {preset} days
+            </button>
+          ))}
+        </div>
+
+        <label className="mt-4 block text-sm">
+          <span className="text-[var(--muted)]">Or enter days</span>
+          <input
+            type="number"
+            min={1}
+            max={3650}
+            value={days}
+            onChange={(e) => setDays(Math.max(1, Math.min(3650, parseInt(e.target.value) || 1)))}
+            className="mt-1 w-full h-11 rounded-lg border border-[var(--border)] bg-[var(--surface)] px-3 text-sm outline-none focus:border-[var(--primary)] focus:shadow-[0_0_0_3px_var(--ring)]"
+          />
+        </label>
+
+        <p className="mt-3 text-[13px] text-[var(--muted)]">
+          {client.is_expired
+            ? "This client is locked out right now. They will be back in as soon as you confirm."
+            : null}{" "}
+          New end date: <span className="font-medium text-[var(--text)]">{newEnd()}</span>
+        </p>
+
+        <button type="submit" disabled={saving} className="btn-primary w-full mt-5 py-2.5 text-sm flex items-center justify-center gap-2">
+          {saving ? <Loader2 size={15} className="animate-spin" /> : null}
+          {saving ? "Saving…" : `Add ${days} day${days === 1 ? "" : "s"}`}
+        </button>
+      </form>
+    </div>
+  );
+};
+
 const CreateClientModal = ({ onClose, onCreated }: { onClose: () => void; onCreated: () => void }) => {
-  const [form, setForm] = useState({ name: "", email: "", phone: "", country_code: "+91", password: "" });
+  /*
+   * term_days is sent as a string so an empty box means "say nothing" and the
+   * partner's own default applies. A typed 0 is a different answer — this one
+   * client has no end date even though you normally sell terms — and it has to
+   * survive the fallback, which it would not if empty and zero both became 0.
+   */
+  const [form, setForm] = useState({ name: "", email: "", phone: "", country_code: "+91", password: "", term_days: "" });
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [tempPassword, setTempPassword] = useState<string | null>(null);
@@ -810,6 +1062,21 @@ const CreateClientModal = ({ onClose, onCreated }: { onClose: () => void; onCrea
             <label className="text-sm font-medium">Phone</label>
             <input required className="input mt-1" value={form.phone} onChange={(e) => setForm({ ...form, phone: e.target.value })} />
           </div>
+        </div>
+        <div>
+          <label className="text-sm font-medium">Term in days (optional)</label>
+          <input
+            type="number"
+            min={0}
+            max={3650}
+            className="input mt-1"
+            placeholder="Blank uses your default · 0 means no expiry"
+            value={form.term_days}
+            onChange={(e) => setForm({ ...form, term_days: e.target.value })}
+          />
+          <p className="mt-1 text-xs text-[var(--muted)]">
+            You can extend this later from the client&rsquo;s row. The client cannot renew it themselves.
+          </p>
         </div>
         <div>
           <label className="text-sm font-medium">Password (optional)</label>

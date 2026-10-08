@@ -22,6 +22,7 @@ import { apiFetch } from "@/src/lib/api";
 import { PartnerProfile, sessionStore } from "@/src/lib/session";
 import { CONSENT_REQUIRED_EVENT, ConsentStatus } from "@/src/lib/consents";
 import ConsentScreen from "@/src/components/ConsentScreen";
+import BorrowedSessionBanner from "@/src/components/BorrowedSessionBanner";
 
 const NAV = [
   { href: "/dashboard", label: "Dashboard", icon: LayoutDashboard },
@@ -309,6 +310,11 @@ export const PanelShell = ({ children }: { children: React.ReactNode }) => {
 
       {/* Content */}
       <div className="flex-1 min-w-0">
+        {/* Above everything, including the header: if this panel is being
+            driven by Wapzio support rather than its owner, that is the first
+            thing anyone looking at the screen should know. */}
+        <BorrowedSessionBanner />
+
         <header className="hidden lg:flex h-16 items-center justify-end gap-2 px-5 border-b border-[var(--border)] bg-[var(--surface)]">
           <BellMenu />
           <div className="w-60">

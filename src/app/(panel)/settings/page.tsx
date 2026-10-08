@@ -37,9 +37,17 @@ interface Form {
   logo_url: string;
   primary_color: string;
   support_email: string;
+  /*
+   * Default term, in days, for clients you onboard from here on.
+   *
+   * Held as a string so the field can be empty while typing. "0" is the
+   * default and means no end date at all — a client keeps working for as long
+   * as your own partner account does.
+   */
+  client_term_days: string;
 }
 
-const EMPTY: Form = { company_email: "", company_phone: "", logo_url: "", primary_color: DEFAULT_COLOR, support_email: "" };
+const EMPTY: Form = { company_email: "", company_phone: "", logo_url: "", primary_color: DEFAULT_COLOR, support_email: "", client_term_days: "0" };
 
 const SectionHead = ({ icon: Icon, title, text }: { icon: React.ElementType; title: string; text: string }) => (
   <div className="flex items-start gap-4">
@@ -107,6 +115,7 @@ export default function SettingsPage() {
         const initial: Form = {
           company_email: d.company_email || "",
           company_phone: d.company_phone || "",
+          client_term_days: String(d.client_term_days ?? 0),
           logo_url: d.branding?.logo_url || "",
           primary_color: d.branding?.primary_color || DEFAULT_COLOR,
           support_email: d.branding?.support_email || "",
@@ -149,6 +158,7 @@ export default function SettingsPage() {
       body: {
         company_email: email,
         company_phone: form.company_phone.trim(),
+        client_term_days: Math.max(0, Math.min(3650, parseInt(form.client_term_days) || 0)),
         branding: { logo_url: logo, primary_color: color || DEFAULT_COLOR, support_email: support },
       },
     });
@@ -235,6 +245,35 @@ export default function SettingsPage() {
               <Field label="Partner code">
                 <input className={LOCKED} value={profile?.slug || ""} readOnly title="Set by Wapzio" />
               </Field>
+            </div>
+
+            {/*
+              The default term for clients you onboard from here on.
+
+              Zero is the default and means no end date: the client keeps
+              working for as long as your own partner account does. Put a
+              number in and new clients get an expiry you can see on the client
+              list and extend from their row — they cannot renew it themselves,
+              because they owe Wapzio nothing and have no billing screen.
+            */}
+            <div className="mt-4 grid grid-cols-1 md:grid-cols-3 gap-4">
+              <Field label="Default client term (days)">
+                <input
+                  type="number"
+                  min={0}
+                  max={3650}
+                  className={INPUT}
+                  value={form.client_term_days}
+                  onChange={(e) => set("client_term_days", e.target.value)}
+                />
+              </Field>
+              <div className="md:col-span-2 flex items-end">
+                <p className="text-[13px] text-[var(--muted)] pb-3">
+                  0 means no expiry — the client runs for as long as your partner account does. Any other number
+                  gives each new client that many days, which you can extend at any time from their row.
+                  Existing clients are not changed.
+                </p>
+              </div>
             </div>
           </section>
 
