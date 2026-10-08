@@ -75,7 +75,7 @@ export default function ConsentScreen({
 
   const card = (
     <div className="card shadow-[var(--shadow-card)] w-full max-w-2xl max-h-[92vh] flex flex-col">
-      <div className="p-5 border-b border-[var(--border)] flex items-start gap-4">
+      <div className="shrink-0 p-5 border-b border-[var(--border)] flex items-start gap-4">
         <div className="w-12 h-12 rounded-full bg-emerald-100 dark:bg-emerald-900/25 text-[var(--primary)] flex items-center justify-center shrink-0">
           <ShieldCheck size={22} />
         </div>
@@ -95,7 +95,16 @@ export default function ConsentScreen({
         ) : null}
       </div>
 
-      <div className="p-5 space-y-3 overflow-y-auto">
+      {/*
+        min-h-0 is what makes max-h-[92vh] above mean anything.
+
+        A flex item defaults to min-height:auto, so this one would not shrink
+        below its content: with a couple of agreements open the card grew past
+        the cap and, being centred, spilled out of the top and bottom of the
+        window at once — heading gone, buttons on the edge, and a scrollbar
+        with nothing to scroll.
+      */}
+      <div className="flex-1 min-h-0 p-5 space-y-3 overflow-y-auto">
         {pending.map((item) => {
           const expanded = open === item.key;
           return (
@@ -118,7 +127,7 @@ export default function ConsentScreen({
               </button>
 
               {expanded ? (
-                <div className="px-4 pb-3 border-t border-[var(--border)] max-h-64 overflow-y-auto">
+                <div className="px-4 pb-3 border-t border-[var(--border)] max-h-[min(16rem,40vh)] overflow-y-auto">
                   {item.is_reacceptance && item.change_summary ? (
                     <p className="mt-3 text-sm rounded-lg bg-amber-50 dark:bg-amber-900/15 text-amber-800 dark:text-amber-300 px-3 py-2">
                       What changed: {item.change_summary}
@@ -142,7 +151,7 @@ export default function ConsentScreen({
         })}
       </div>
 
-      <div className="p-5 border-t border-[var(--border)] flex items-center justify-between gap-3 flex-wrap">
+      <div className="shrink-0 p-5 border-t border-[var(--border)] flex items-center justify-between gap-3 flex-wrap">
         {mode === "block" && onSignOut ? (
           <button onClick={onSignOut} className="text-sm text-[var(--muted)] hover:text-[var(--text)] flex items-center gap-2">
             <LogOut size={16} />
