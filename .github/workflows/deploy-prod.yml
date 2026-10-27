@@ -76,6 +76,15 @@ jobs:
       - name: Build on server and swap into place
         uses: appleboy/ssh-action@v1.2.0
         with:
+          # appleboy/ssh-action kills the SSH command at 10 minutes by default, and
+          # that default is not generous enough for this step: `npm ci` deletes
+          # node_modules and reinstalls, then `npm run build` compiles the whole Next
+          # app, both on a box shared with ten other productions. When it fires the
+          # work is cut off part-done, the swap below never runs, and the job reports
+          # only "Run Command Timeout" with no other explanation. A ceiling is still
+          # wanted — a hung build must not hold the runner for an hour — just one
+          # above the real worst case.
+          command_timeout: 40m
           host: ${{ secrets.SSH_HOST }}
           port: ${{ secrets.SSH_PORT }}
           username: ${{ secrets.SSH_USER }}
